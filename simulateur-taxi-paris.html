@@ -1,0 +1,116 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulateur Taxi Paris</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Taxi Paris">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        #map {
+            height: 300px;
+            width: 100%;
+        }
+        .container {
+            padding: 15px;
+        }
+        input, select, button {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            font-size: 16px;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="container">
+        <input type="text" id="start" placeholder="Adresse de départ">
+        <input type="text" id="end" placeholder="Adresse d’arrivée">
+        <select id="reservation">
+            <option value="0">Pas de réservation</option>
+            <option value="4">Réservation immédiate (+4€)</option>
+            <option value="7">Réservation à l’avance (+7€)</option>
+        </select>
+        <input type="number" id="passengers" placeholder="Nombre de passagers (1 à 6)" min="1" max="6">
+        <button onclick="calculateFare()">Estimer le tarif</button>
+        <div class="result" id="output"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+    <script src="https://unpkg.com/@mapbox/mapbox-sdk/umd/mapbox-sdk.min.js"></script>
+    <script>
+        let map = L.map('map').setView([48.8566, 2.3522], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        let startMarker, endMarker;
+
+        function geocodeAddress(address, callback) {
+            fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.length > 0) {
+                        callback([parseFloat(data[0].lat), parseFloat(data[0].lon)]);
+                    } else {
+                        alert("Adresse introuvable : " + address);
+                    }
+                });
+        }
+
+        function calculateFare() {
+            const start = document.getElementById("start").value;
+            const end = document.getElementById("end").value;
+            const reservation = parseFloat(document.getElementById("reservation").value);
+            const passengers = parseInt(document.getElementById("passengers").value);
+
+            if (!start || !end || !passengers) {
+                alert("Merci de remplir tous les champs.");
+                return;
+            }
+
+            geocodeAddress(start, (startCoord) => {
+                geocodeAddress(end, (endCoord) => {
+                    if (startMarker) map.removeLayer(startMarker);
+                    if (endMarker) map.removeLayer(endMarker);
+
+                    startMarker = L.marker(startCoord).addTo(map).bindPopup("Départ").openPopup();
+                    endMarker = L.marker(endCoord).addTo(map).bindPopup("Arrivée");
+
+                    const distance = map.distance(startCoord, endCoord) / 1000; // en km
+                    const tarifKm = 1.29;
+                    const priseEnCharge = 4.48;
+                    const tarifMin = 8.0;
+                    const extraPassenger = passengers > 4 ? (passengers - 4) * 5.5 : 0;
+
+                    let total = priseEnCharge + (distance * tarifKm) + reservation + extraPassenger;
+                    if (total < tarifMin) total = tarifMin;
+
+                    const output = document.getElementById("output");
+                    output.innerHTML = `
+                        <strong>Tarif estimé :</strong> ${total.toFixed(2)} €<br>
+                        Distance estimée : ${distance.toFixed(2)} km<br>
+                        Suppléments : ${reservation + extraPassenger} €
+                    `;
+                    map.fitBounds([startCoord, endCoord]);
+                });
+            });
+        }
+    </script>
+</body>
+</html>
