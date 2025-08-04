@@ -20,20 +20,6 @@
       padding: 1em;
       margin: 0;
     }
-    .waiting-info {
-      display: flex;
-      justify-content: center;
-      margin-top: 10px;
-    }
-    .waiting-info div {
-      background: #f1f1f1;
-      border: 2px solid #ccc;
-      border-radius: 50px;
-      padding: 10px 25px;
-      font-size: 14px;
-      color: #333;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-    }
     input, button {
       padding: 1em;
       margin: 1em 0.5em;
@@ -59,16 +45,21 @@
       height: 300px;
       margin: 1em;
     }
+    .airport-link {
+      display: inline-block;
+      margin-top: 20px;
+      padding: 12px 25px;
+      background: #0052cc;
+      color: white;
+      text-decoration: none;
+      border-radius: 40px;
+      font-weight: bold;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    }
   </style>
 </head>
 <body>
   <h1>🚖 Simulateur Taxi Paris</h1>
-
-  <div class="waiting-info">
-    <div>
-      🕑 <strong>Attente aéroport</strong> : CDG 10–25 min · Orly 5–15 min
-    </div>
-  </div>
 
   <input id="destination" placeholder="Adresse de destination ou aéroport" />
   <br>
@@ -77,6 +68,10 @@
 
   <div class="result" id="result">—</div>
   <div id="map"></div>
+
+  <a href="https://infotaxi.parisaeroport.fr" target="_blank" class="airport-link">
+    🔄 Voir temps réel aéroports
+  </a>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
@@ -156,10 +151,21 @@
           L.latLng(48.726243, 2.365247)
         ],
         routeWhileDragging: false,
-        show: false,
         createMarker: () => null,
-        addWaypoints: false
+        addWaypoints: false,
+        lineOptions: {
+          styles: [{ color: '#0074D9', weight: 5 }]
+        },
+        router: L.Routing.osrmv1(),
+        show: false,
+        collapsible: true,
+        fitSelectedRoutes: true
       }).addTo(map);
+
+      routingControl.on('routesfound', function() {
+        const container = document.querySelector('.leaflet-routing-container');
+        if (container) container.style.display = 'none';
+      });
     }
 
     function useMyLocation() {
