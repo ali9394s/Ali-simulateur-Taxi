@@ -61,7 +61,7 @@
 <body>
   <h1>🚖 Simulateur Taxi Paris</h1>
 
-  <input id="departure" placeholder="Adresse de départ (laisser vide pour position)"/><br/>
+  <input id="departure" placeholder="Adresse de départ (laisser vide pour position actuelle)"/><br/>
   <input id="destination" placeholder="Adresse de destination ou aéroport"/><br/>
   <button onclick="useMyLocation()">📍 Utiliser ma position</button>
   <button onclick="estimateFare()">Estimer le tarif</button>
@@ -71,31 +71,27 @@
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
-  <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
 
   <script>
     const TARIF_KM = 1.29;
     const PRISE_EN_CHARGE = 4.48;
     const TARIF_MIN = 8.0;
-    const FORFAITS = { CDG:{right:56,left:65}, ORLY:{right:45,left:36} };
-    const ZONE_URBAINE = {latMin:48.80, latMax:48.90, lngMin:2.25, lngMax:2.42};
+    const FORFAITS = {
+      CDG: { right: 56, left: 65 },
+      ORLY: { right: 45, left: 36 }
+    };
+    const ZONE_URBAINE = { latMin: 48.80, latMax: 48.90, lngMin: 2.25, lngMax: 2.42 };
 
     let userLat, userLng;
     let map = L.map('map').setView([48.8566, 2.3522], 12);
     let routingControl;
-    let userMarker = null;
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    function getRive(lat) { return lat > 48.8566 ? 'right' : 'left'; }
-
-    function detectAirport(addr) {
-      addr = addr.toLowerCase();
-      if (addr.includes('cdg') || addr.includes('charles de gaulle')) return 'CDG';
-      if (addr.includes('orly')) return 'ORLY';
-      return null;
+    function getRive(lat) {
+      return lat > 48.8566 ? 'right' : 'left';
     }
 
     function isInZone(lat, lng) {
@@ -109,12 +105,7 @@
           userLat = pos.coords.latitude;
           userLng = pos.coords.longitude;
           map.setView([userLat, userLng], 13);
-
-          if (userMarker) {
-            map.removeLayer(userMarker);
-          }
-          userMarker = L.marker([userLat, userLng]).addTo(map).bindPopup("Vous êtes ici").openPopup();
-
+          L.marker([userLat, userLng]).addTo(map).bindPopup("Vous êtes ici").openPopup();
           document.getElementById('result').innerText = "Position détectée.";
         }, () => {
           document.getElementById('result').innerText = "Impossible d'obtenir la position.";
@@ -126,93 +117,80 @@
 
     function estimateFare() {
       document.getElementById('result').innerText = "Calcul en cours...";
-      const dest = document.getElementById('destination').value.trim();
-      const departure = document.getElementById('departure').value.trim();
+      const depInput = document.getElementById('departure').value.trim();
+      const destInput = document.getElementById('destination').value.trim();
+      if (!destInput) return document.getElementById('result').innerText = "Veuillez entrer une destination.";
 
-      if (!dest) {
-        document.getElementById('result').innerText = "Veuillez entrer une adresse de destination.";
-        return;
-      }
-
-      const processRoute = (lat1, lon1) => {
-        fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(dest))
-        .then(r => r.json())
-        .then(data => {
-          if (!data || !data.length) {
-            document.getElementById('result').innerText = "Adresse de destination introuvable.";
-            return;
-          }
-
-          const lat2 = parseFloat(data[0].lat);
-          const lon2 = parseFloat(data[0].lon);
-
-          if (routingControl) {
-            map.removeControl(routingControl);
-          }
-
-          routingControl = L.Routing.control({
-            waypoints: [L.latLng(lat1, lon1), L.latLng(lat2, lon2)],
-            router: L.Routing.osrmv1(),
-            lineOptions: { styles: [{ color: '#0074D9', weight: 5 }] },
-            createMarker: (i, wp) => {
-              return L.marker(wp.latLng).bindPopup(i === 0 ? "Départ" : "Destination");
-            },
-            addWaypoints: false,
-            draggableWaypoints: false,
-            fitSelectedRoutes: true,
-            show: false,
-            collapsible: false,
-            routeWhileDragging: false,
-            plan: L.Routing.plan([L.latLng(lat1, lon1), L.latLng(lat2, lon2)], {
-              createMarker: () => null
-            })
-          }).addTo(map);
-
-          routingControl.on('routesfound', e => {
-            const route = e.routes[0];
-            const distanceKm = route.summary.totalDistance / 1000;
-
-            const airport = detectAirport(dest);
-            const rive = getRive(lat1);
-            const inUrban = isInZone(lat1, lon1);
-
-            let price;
-            if (airport && inUrban) {
-              price = FORFAITS[airport][rive];
-            } else {
-              price = PRISE_EN_CHARGE + distanceKm * TARIF_KM;
-            }
-            if (price < TARIF_MIN) price = TARIF_MIN;
-
-            document.getElementById('result').innerText = `Tarif estimé : ${price.toFixed(2)} € (distance ${distanceKm.toFixed(2)} km)`;
-          });
-
-        }).catch(() => {
-          document.getElementById('result').innerText = "Erreur géocoding destination.";
-        });
-      };
-
-      if (departure) {
-        // Géocoder adresse de départ
-        fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(departure))
+      // Fonction géocodage
+      function geocode(query) {
+        return fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(query))
           .then(r => r.json())
-          .then(data => {
-            if (!data || !data.length) {
-              document.getElementById('result').innerText = "Adresse de départ introuvable.";
-              return;
-            }
-            const lat1 = parseFloat(data[0].lat);
-            const lon1 = parseFloat(data[0].lon);
-            processRoute(lat1, lon1);
-          })
-          .catch(() => {
-            document.getElementById('result').innerText = "Erreur géocoding départ.";
-          });
-      } else if (userLat && userLng) {
-        processRoute(userLat, userLng);
-      } else {
-        document.getElementById('result').innerText = "Veuillez utiliser la position ou entrer une adresse de départ.";
+          .then(data => (data && data.length) ? [parseFloat(data[0].lat), parseFloat(data[0].lon)] : null);
       }
+
+      Promise.all([
+        depInput ? geocode(depInput) : Promise.resolve([userLat, userLng]),
+        geocode(destInput)
+      ]).then(results => {
+        const from = results[0], to = results[1];
+        if (!from || !to) return document.getElementById('result').innerText = "Adresse(s) introuvable(s).";
+
+        const [lat1, lon1] = from;
+        const [lat2, lon2] = to;
+
+        if (routingControl) map.removeControl(routingControl);
+        routingControl = L.Routing.control({
+          waypoints: [L.latLng(lat1, lon1), L.latLng(lat2, lon2)],
+          router: L.Routing.osrmv1(),
+          lineOptions: { styles: [{ color: '#0074D9', weight: 5 }] },
+          createMarker: () => null,
+          addWaypoints: false,
+          draggableWaypoints: false,
+          fitSelectedRoutes: true,
+          show: false
+        }).addTo(map);
+
+        // Supprimer les infos itinéraires
+        setTimeout(() => {
+          document.querySelectorAll('.leaflet-routing-container').forEach(el => el.remove());
+        }, 0);
+
+        routingControl.on('routesfound', e => {
+          const distanceKm = e.routes[0].summary.totalDistance / 1000;
+
+          // Détection automatique aéroport
+          const destLower = destInput.toLowerCase();
+          let airport = null;
+
+          if (destLower.includes('cdg') || destLower.includes('charles')) airport = 'CDG';
+          else if (destLower.includes('orly')) airport = 'ORLY';
+          else {
+            const dist = (lat, lon, p) => {
+              const R = 6371e3;
+              const φ1 = lat * Math.PI / 180, φ2 = p.lat * Math.PI / 180;
+              const Δφ = (p.lat - lat) * Math.PI / 180;
+              const Δλ = (p.lon - lon) * Math.PI / 180;
+              const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+              return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            };
+            if (dist(lat2, lon2, { lat: 49.0097, lon: 2.5479 }) < 3000) airport = 'CDG';
+            else if (dist(lat2, lon2, { lat: 48.7262, lon: 2.3652 }) < 3000) airport = 'ORLY';
+          }
+
+          const inUrban = isInZone(lat1, lon1);
+          let price;
+          if (airport && inUrban) {
+            price = FORFAITS[airport][getRive(lat1)];
+          } else {
+            price = PRISE_EN_CHARGE + distanceKm * TARIF_KM;
+          }
+          if (price < TARIF_MIN) price = TARIF_MIN;
+
+          document.getElementById('result').innerText = `Tarif estimé : ${price.toFixed(2)} € (distance ${distanceKm.toFixed(2)} km)`;
+        });
+      }).catch(() => {
+        document.getElementById('result').innerText = "Erreur de calcul.";
+      });
     }
   </script>
 </body>
