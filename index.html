@@ -2,115 +2,109 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>index.html</title>
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="Taxi Paris">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-        }
-        #map {
-            height: 300px;
-            width: 100%;
-        }
-        .container {
-            padding: 15px;
-        }
-        input, select, button {
-            width: 100%;
-            padding: 10px;
-            margin: 5px 0;
-            font-size: 16px;
-        }
-        .result {
-            margin-top: 15px;
-            padding: 10px;
-            background-color: #f0f0f0;
-            border-radius: 5px;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Simulateur Taxi Paris</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to bottom right, #0f2027, #203a43, #2c5364);
+      color: white;
+      text-align: center;
+      padding: 2em;
+      margin: 0;
+    }
+    h1 {
+      font-size: 1.8em;
+      margin-bottom: 0.5em;
+    }
+    input, button {
+      padding: 1em;
+      margin: 1em 0.5em;
+      border: none;
+      border-radius: 8px;
+      font-size: 1em;
+    }
+    button {
+      background-color: #ffcc00;
+      color: black;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    input {
+      width: 80%;
+      max-width: 300px;
+    }
+    .result {
+      margin-top: 2em;
+      font-size: 1.4em;
+    }
+  </style>
 </head>
 <body>
-    <div id="map"></div>
-    <div class="container">
-        <input type="text" id="start" placeholder="Adresse de départ">
-        <input type="text" id="end" placeholder="Adresse d’arrivée">
-        <select id="reservation">
-            <option value="0">Pas de réservation</option>
-            <option value="4">Réservation immédiate (+4€)</option>
-            <option value="7">Réservation à l’avance (+7€)</option>
-        </select>
-        <input type="number" id="passengers" placeholder="Nombre de passagers (1 à 6)" min="1" max="6">
-        <button onclick="calculateFare()">Estimer le tarif</button>
-        <div class="result" id="output"></div>
-    </div>
+  <h1>🚕 Simulateur Taxi Paris</h1>
+  <p>Entrez votre destination ou utilisez votre position actuelle :</p>
+  <input id="destination" placeholder="Adresse de destination" />
+  <br>
+  <button onclick="useMyLocation()">📍 Utiliser ma position</button>
+  <button onclick="estimateFare()">Estimer le tarif</button>
 
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
-    <script src="https://unpkg.com/@mapbox/mapbox-sdk/umd/mapbox-sdk.min.js"></script>
-    <script>
-        let map = L.map('map').setView([48.8566, 2.3522], 12);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
-        }).addTo(map);
+  <div class="result" id="result">—</div>
 
-        let startMarker, endMarker;
+  <script>
+    const FORFAITS = {
+      CDG: { right: 56, left: 65 },
+      ORLY: { right: 45, left: 36 }
+    };
 
-        function geocodeAddress(address, callback) {
-            fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`)
-                .then(res => res.json())
-                .then(data => {
-                    if (data && data.length > 0) {
-                        callback([parseFloat(data[0].lat), parseFloat(data[0].lon)]);
-                    } else {
-                        alert("Adresse introuvable : " + address);
-                    }
-                });
-        }
+    function getRive(lat, lng) {
+      return lat > 48.8566 ? 'right' : 'left';
+    }
 
-        function calculateFare() {
-            const start = document.getElementById("start").value;
-            const end = document.getElementById("end").value;
-            const reservation = parseFloat(document.getElementById("reservation").value);
-            const passengers = parseInt(document.getElementById("passengers").value);
+    function detectAeroport(address) {
+      address = address.toLowerCase();
+      if (address.includes("charles de gaulle") || address.includes("cdg")) return "CDG";
+      if (address.includes("orly")) return "ORLY";
+      return null;
+    }
 
-            if (!start || !end || !passengers) {
-                alert("Merci de remplir tous les champs.");
-                return;
-            }
+    function applyMajoration(price) {
+      return Math.round(price * 1.05);
+    }
 
-            geocodeAddress(start, (startCoord) => {
-                geocodeAddress(end, (endCoord) => {
-                    if (startMarker) map.removeLayer(startMarker);
-                    if (endMarker) map.removeLayer(endMarker);
+    function estimateFare() {
+      const input = document.getElementById("destination").value;
+      const airport = detectAeroport(input);
+      if (!input) {
+        document.getElementById("result").innerText = "Veuillez entrer une adresse.";
+        return;
+      }
 
-                    startMarker = L.marker(startCoord).addTo(map).bindPopup("Départ").openPopup();
-                    endMarker = L.marker(endCoord).addTo(map).bindPopup("Arrivée");
+      if (airport && window.userRive) {
+        const rive = window.userRive;
+        const price = applyMajoration(FORFAITS[airport][rive]);
+        document.getElementById("result").innerText = `Forfait ${airport} (${rive === 'right' ? 'Rive Droite' : 'Rive Gauche'}) : ${price} €`;
+      } else {
+        const base = 10;
+        const estimate = applyMajoration(base + Math.random() * 20);
+        document.getElementById("result").innerText = `Estimation approximative : ${estimate} €`;
+      }
+    }
 
-                    const distance = map.distance(startCoord, endCoord) / 1000; // en km
-                    const tarifKm = 1.29;
-                    const priseEnCharge = 4.48;
-                    const tarifMin = 8.0;
-                    const extraPassenger = passengers > 4 ? (passengers - 4) * 5.5 : 0;
-
-                    let total = priseEnCharge + (distance * tarifKm) + reservation + extraPassenger;
-                    if (total < tarifMin) total = tarifMin;
-
-                    const output = document.getElementById("output");
-                    output.innerHTML = `
-                        <strong>Tarif estimé :</strong> ${total.toFixed(2)} €<br>
-                        Distance estimée : ${distance.toFixed(2)} km<br>
-                        Suppléments : ${reservation + extraPassenger} €
-                    `;
-                    map.fitBounds([startCoord, endCoord]);
-                });
-            });
-        }
-    </script>
+    function useMyLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          window.userRive = getRive(lat, lng);
+          document.getElementById("result").innerText = `Position détectée (${window.userRive === 'right' ? 'Rive Droite' : 'Rive Gauche'})`;
+        }, () => {
+          document.getElementById("result").innerText = "Impossible d'obtenir votre position.";
+        });
+      } else {
+        document.getElementById("result").innerText = "La géolocalisation n'est pas supportée.";
+      }
+    }
+  </script>
 </body>
 </html>
