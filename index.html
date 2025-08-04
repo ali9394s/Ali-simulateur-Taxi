@@ -162,9 +162,14 @@
               return null;
             },
             addWaypoints: false,
+            draggableWaypoints: false,
+            fitSelectedRoutes: true,
             show: false,
-            collapsible: true,
-            fitSelectedRoutes: true
+            collapsible: false,
+            routeWhileDragging: false,
+            plan: L.Routing.plan([L.latLng(userLat, userLng), L.latLng(lat2, lon2)], {
+              createMarker: () => null
+            })
           }).addTo(map);
 
           routingControl.on('routesfound', e => {
