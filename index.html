@@ -22,7 +22,7 @@
     }
     input, button {
       padding: 1em;
-      margin: 1em 0.5em;
+      margin: 0.5em 0.5em;
       border: none;
       border-radius: 8px;
       font-size: 1em;
@@ -60,6 +60,8 @@
 </head>
 <body>
   <h1>🚖 Simulateur Taxi Paris</h1>
+
+  <input id="departure" placeholder="Adresse de départ (laisser vide pour position)"/><br/>
   <input id="destination" placeholder="Adresse de destination ou aéroport"/><br/>
   <button onclick="useMyLocation()">📍 Utiliser ma position</button>
   <button onclick="estimateFare()">Estimer le tarif</button>
@@ -125,22 +127,22 @@
     function estimateFare() {
       document.getElementById('result').innerText = "Calcul en cours...";
       const dest = document.getElementById('destination').value.trim();
-      if (!userLat || !userLng) {
-        document.getElementById('result').innerText = "Position non détectée.";
-        return;
-      }
+      const departure = document.getElementById('departure').value.trim();
+
       if (!dest) {
-        document.getElementById('result').innerText = "Veuillez entrer une adresse.";
+        document.getElementById('result').innerText = "Veuillez entrer une adresse de destination.";
         return;
       }
 
-      fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(dest))
+      const processRoute = (lat1, lon1) => {
+        fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(dest))
         .then(r => r.json())
         .then(data => {
           if (!data || !data.length) {
-            document.getElementById('result').innerText = "Adresse introuvable.";
+            document.getElementById('result').innerText = "Adresse de destination introuvable.";
             return;
           }
+
           const lat2 = parseFloat(data[0].lat);
           const lon2 = parseFloat(data[0].lon);
 
@@ -149,17 +151,11 @@
           }
 
           routingControl = L.Routing.control({
-            waypoints: [L.latLng(userLat, userLng), L.latLng(lat2, lon2)],
+            waypoints: [L.latLng(lat1, lon1), L.latLng(lat2, lon2)],
             router: L.Routing.osrmv1(),
             lineOptions: { styles: [{ color: '#0074D9', weight: 5 }] },
             createMarker: (i, wp) => {
-              if (i === 0) {
-                return L.marker(wp.latLng).bindPopup("Départ");
-              }
-              if (i === 1) {
-                return L.marker(wp.latLng).bindPopup("Destination");
-              }
-              return null;
+              return L.marker(wp.latLng).bindPopup(i === 0 ? "Départ" : "Destination");
             },
             addWaypoints: false,
             draggableWaypoints: false,
@@ -167,7 +163,7 @@
             show: false,
             collapsible: false,
             routeWhileDragging: false,
-            plan: L.Routing.plan([L.latLng(userLat, userLng), L.latLng(lat2, lon2)], {
+            plan: L.Routing.plan([L.latLng(lat1, lon1), L.latLng(lat2, lon2)], {
               createMarker: () => null
             })
           }).addTo(map);
@@ -177,8 +173,8 @@
             const distanceKm = route.summary.totalDistance / 1000;
 
             const airport = detectAirport(dest);
-            const rive = getRive(userLat);
-            const inUrban = isInZone(userLat, userLng);
+            const rive = getRive(lat1);
+            const inUrban = isInZone(lat1, lon1);
 
             let price;
             if (airport && inUrban) {
@@ -192,8 +188,31 @@
           });
 
         }).catch(() => {
-          document.getElementById('result').innerText = "Erreur géocoding.";
+          document.getElementById('result').innerText = "Erreur géocoding destination.";
         });
+      };
+
+      if (departure) {
+        // Géocoder adresse de départ
+        fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(departure))
+          .then(r => r.json())
+          .then(data => {
+            if (!data || !data.length) {
+              document.getElementById('result').innerText = "Adresse de départ introuvable.";
+              return;
+            }
+            const lat1 = parseFloat(data[0].lat);
+            const lon1 = parseFloat(data[0].lon);
+            processRoute(lat1, lon1);
+          })
+          .catch(() => {
+            document.getElementById('result').innerText = "Erreur géocoding départ.";
+          });
+      } else if (userLat && userLng) {
+        processRoute(userLat, userLng);
+      } else {
+        document.getElementById('result').innerText = "Veuillez utiliser la position ou entrer une adresse de départ.";
+      }
     }
   </script>
 </body>
