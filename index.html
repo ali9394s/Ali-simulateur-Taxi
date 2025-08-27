@@ -2,52 +2,50 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Simulateur Taxi Paris</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Calculatrice Taxi Paris</title>
   <style>
     body {
-      font-family: 'Segoe UI', sans-serif;
+      font-family: Arial, sans-serif;
       background: #f9f9f9;
-      color: #333;
-      margin: 0;
-      padding: 0;
       text-align: center;
+      padding: 20px;
     }
     h1 {
       background: #2c3e50;
-      color: #fff;
-      padding: 1em;
-      margin: 0;
-    }
-    input, button {
-      padding: 1em;
-      margin: 0.5em 0.5em;
-      border: none;
+      color: white;
+      padding: 15px;
       border-radius: 8px;
-      font-size: 1em;
-    }
-    button {
-      background: #27ae60;
-      color: #fff;
-      font-weight: bold;
-      cursor: pointer;
     }
     input {
-      width: 80%;
-      max-width: 300px;
+      padding: 10px;
+      margin: 10px;
+      width: 200px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    button {
+      margin: 5px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background: #27ae60;
+      color: white;
+      font-weight: bold;
+    }
+    button:hover {
+      background: #219150;
     }
     .result {
-      margin: 1em auto;
-      font-size: 1.2em;
-    }
-    #map {
-      height: 300px;
-      margin: 1em;
+      margin-top: 20px;
+      font-size: 20px;
+      font-weight: bold;
     }
     .airport-link {
       display: inline-block;
-      margin-top: 20px;
+      margin-top: 30px;
       padding: 12px 25px;
       background: #0052cc;
       color: #fff;
@@ -59,138 +57,50 @@
   </style>
 </head>
 <body>
-  <h1>🚖 Simulateur Taxi Paris</h1>
+  <h1>🚖 Calculatrice Taxi Paris</h1>
 
-  <input id="departure" placeholder="Adresse de départ (laisser vide pour position actuelle)"/><br/>
-  <input id="destination" placeholder="Adresse de destination ou aéroport"/><br/>
-  <button onclick="useMyLocation()">📍 Utiliser ma position</button>
-  <button onclick="estimateFare()">Estimer le tarif</button>
+  <input id="distance" type="number" step="0.1" placeholder="Distance (km)"/><br>
+  <input id="temps" type="number" step="1" placeholder="Temps (minutes)"/><br>
+
+  <button onclick="calculer('A')">Tarif A</button>
+  <button onclick="calculer('B')">Tarif B</button>
+  <button onclick="calculer('C')">Tarif C</button>
+
   <div class="result" id="result">—</div>
-  <div id="map"></div>
-  <a href="https://infotaxi.parisaeroport.fr" target="_blank" class="airport-link">🔄 Voir temps réel aéroports</a>
 
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.min.js"></script>
+  <a href="https://infotaxi.parisaeroport.fr" target="_blank" class="airport-link">
+    🔄 Voir temps réel aéroports
+  </a>
 
   <script>
-    const TARIF_KM = 1.29;
-    const PRISE_EN_CHARGE = 4.48;
-    const TARIF_MIN = 8.0;
-    const FORFAITS = {
-      CDG: { right: 56, left: 65 },
-      ORLY: { right: 45, left: 36 }
+    const PRISE_EN_CHARGE = 4.40;
+    const TARIF_MIN = 8.00;
+
+    // Paramètres tarifs (€/km, €/h)
+    const TARIFS = {
+      A: { km: 1.21, h: 37.46 },
+      B: { km: 1.64, h: 38.76 },
+      C: { km: 2.08, h: 38.76 }
     };
-    const ZONE_URBAINE = { latMin: 48.80, latMax: 48.90, lngMin: 2.25, lngMax: 2.42 };
 
-    let userLat, userLng;
-    let map = L.map('map').setView([48.8566, 2.3522], 12);
-    let routingControl;
+    function calculer(type) {
+      const distance = parseFloat(document.getElementById('distance').value);
+      const tempsMin = parseFloat(document.getElementById('temps').value);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap'
-    }).addTo(map);
-
-    function getRive(lat) {
-      return lat > 48.8566 ? 'right' : 'left';
-    }
-
-    function isInZone(lat, lng) {
-      return lat >= ZONE_URBAINE.latMin && lat <= ZONE_URBAINE.latMax &&
-             lng >= ZONE_URBAINE.lngMin && lng <= ZONE_URBAINE.lngMax;
-    }
-
-    function useMyLocation() {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(pos => {
-          userLat = pos.coords.latitude;
-          userLng = pos.coords.longitude;
-          map.setView([userLat, userLng], 13);
-          L.marker([userLat, userLng]).addTo(map).bindPopup("Vous êtes ici").openPopup();
-          document.getElementById('result').innerText = "Position détectée.";
-        }, () => {
-          document.getElementById('result').innerText = "Impossible d'obtenir la position.";
-        });
-      } else {
-        document.getElementById('result').innerText = "Géolocalisation non supportée.";
-      }
-    }
-
-    function estimateFare() {
-      document.getElementById('result').innerText = "Calcul en cours...";
-      const depInput = document.getElementById('departure').value.trim();
-      const destInput = document.getElementById('destination').value.trim();
-      if (!destInput) return document.getElementById('result').innerText = "Veuillez entrer une destination.";
-
-      // Fonction géocodage
-      function geocode(query) {
-        return fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(query))
-          .then(r => r.json())
-          .then(data => (data && data.length) ? [parseFloat(data[0].lat), parseFloat(data[0].lon)] : null);
+      if (isNaN(distance) || isNaN(tempsMin)) {
+        document.getElementById('result').innerText = "⚠️ Entrez distance et temps.";
+        return;
       }
 
-      Promise.all([
-        depInput ? geocode(depInput) : Promise.resolve([userLat, userLng]),
-        geocode(destInput)
-      ]).then(results => {
-        const from = results[0], to = results[1];
-        if (!from || !to) return document.getElementById('result').innerText = "Adresse(s) introuvable(s).";
+      const tarif = TARIFS[type];
+      const prixDistance = distance * tarif.km;
+      const prixTemps = (tempsMin / 60) * tarif.h;
+      let total = PRISE_EN_CHARGE + prixDistance + prixTemps;
 
-        const [lat1, lon1] = from;
-        const [lat2, lon2] = to;
+      if (total < TARIF_MIN) total = TARIF_MIN;
 
-        if (routingControl) map.removeControl(routingControl);
-        routingControl = L.Routing.control({
-          waypoints: [L.latLng(lat1, lon1), L.latLng(lat2, lon2)],
-          router: L.Routing.osrmv1(),
-          lineOptions: { styles: [{ color: '#0074D9', weight: 5 }] },
-          createMarker: () => null,
-          addWaypoints: false,
-          draggableWaypoints: false,
-          fitSelectedRoutes: true,
-          show: false
-        }).addTo(map);
-
-        // Supprimer les infos itinéraires
-        setTimeout(() => {
-          document.querySelectorAll('.leaflet-routing-container').forEach(el => el.remove());
-        }, 0);
-
-        routingControl.on('routesfound', e => {
-          const distanceKm = e.routes[0].summary.totalDistance / 1000;
-
-          // Détection automatique aéroport
-          const destLower = destInput.toLowerCase();
-          let airport = null;
-
-          if (destLower.includes('cdg') || destLower.includes('charles')) airport = 'CDG';
-          else if (destLower.includes('orly')) airport = 'ORLY';
-          else {
-            const dist = (lat, lon, p) => {
-              const R = 6371e3;
-              const φ1 = lat * Math.PI / 180, φ2 = p.lat * Math.PI / 180;
-              const Δφ = (p.lat - lat) * Math.PI / 180;
-              const Δλ = (p.lon - lon) * Math.PI / 180;
-              const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
-              return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            };
-            if (dist(lat2, lon2, { lat: 49.0097, lon: 2.5479 }) < 3000) airport = 'CDG';
-            else if (dist(lat2, lon2, { lat: 48.7262, lon: 2.3652 }) < 3000) airport = 'ORLY';
-          }
-
-          const inUrban = isInZone(lat1, lon1);
-          let price;
-          if (airport && inUrban) {
-            price = FORFAITS[airport][getRive(lat1)];
-          } else {
-            price = PRISE_EN_CHARGE + distanceKm * TARIF_KM;
-          }
-          if (price < TARIF_MIN) price = TARIF_MIN;
-
-          document.getElementById('result').innerText = `Tarif estimé : ${price.toFixed(2)} € (distance ${distanceKm.toFixed(2)} km)`;
-        });
-      }).catch(() => {
-        document.getElementById('result').innerText = "Erreur de calcul.";
-      });
+      document.getElementById('result').innerText =
+        `Tarif ${type} → ${total.toFixed(2)} € (distance ${distance.toFixed(1)} km, temps ${tempsMin} min)`;
     }
   </script>
 </body>
