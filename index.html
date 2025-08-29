@@ -1,107 +1,227 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Calculatrice Taxi Paris</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Prochains trains (simple)</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f9f9f9;
-      text-align: center;
-      padding: 20px;
-    }
-    h1 {
-      background: #2c3e50;
-      color: white;
-      padding: 15px;
-      border-radius: 8px;
-    }
-    input {
-      padding: 10px;
-      margin: 10px;
-      width: 200px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-    }
-    button {
-      margin: 5px;
-      padding: 10px 20px;
-      font-size: 16px;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      background: #27ae60;
-      color: white;
-      font-weight: bold;
-    }
-    button:hover {
-      background: #219150;
-    }
-    .result {
-      margin-top: 20px;
-      font-size: 20px;
-      font-weight: bold;
-    }
-    .airport-link {
-      display: inline-block;
-      margin-top: 30px;
-      padding: 12px 25px;
-      background: #0052cc;
-      color: #fff;
-      text-decoration: none;
-      border-radius: 40px;
-      font-weight: bold;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-    }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;padding:16px;background:#f4f7fb;color:#111}
+    h1{font-size:20px;margin:0 0 12px}
+    .box{background:#fff;border-radius:10px;padding:12px;box-shadow:0 6px 18px rgba(20,30,60,.06)}
+    label{display:block;font-size:13px;color:#556;margin-bottom:6px}
+    input, select, button{width:100%;padding:10px;border-radius:8px;border:1px solid #d7dfea;background:white;font-size:15px;box-sizing:border-box}
+    .row{display:flex;gap:8px}
+    .row > *{flex:1}
+    button.primary{background:#0b66ff;color:#fff;border:none}
+    button.secondary{background:#eef2ff;border:1px solid #cbdcff}
+    #results{margin-top:12px}
+    .tile{padding:10px;border-radius:8px;border:1px solid #e6eefb;background:#fbfdff;margin-bottom:8px}
+    .line{font-weight:700}
+    .time{font-variant-numeric:tabular-nums;font-weight:700}
+    .muted{color:#6b778d;font-size:13px}
+    .hint{font-size:12px;color:#6b778d;margin-top:6px}
+    .flex{display:flex;gap:8px;align-items:center}
+    .small{font-size:13px}
+    .ok{color:#0b8a4b}
+    .err{color:#d0454c}
   </style>
 </head>
 <body>
-  <h1>🚖 Calculatrice Taxi Paris</h1>
+  <h1>🚆 Prochains trains — (simple)</h1>
 
-  <input id="distance" type="number" step="0.1" placeholder="Distance (km)"/><br>
-  <input id="temps" type="number" step="1" placeholder="Temps (minutes)"/><br>
+  <div class="box">
+    <label>Clé API Navitia (optionnel pour tester en réel)</label>
+    <input id="apiKey" type="password" placeholder="Colle ta clé Navitia ici (ex: api:key...)">
 
-  <button onclick="calculer('A')">Tarif A</button>
-  <button onclick="calculer('B')">Tarif B</button>
-  <button onclick="calculer('C')">Tarif C</button>
+    <label style="margin-top:8px">Gare / station (ex. "Gare de Lyon" ou "Paris Montparnasse")</label>
+    <input id="station" placeholder="Nom de la gare">
 
-  <div class="result" id="result">—</div>
+    <div style="margin-top:8px" class="row">
+      <div>
+        <label>Mode</label>
+        <select id="mode">
+          <option value="departures">Départs</option>
+          <option value="arrivals">Arrivées</option>
+        </select>
+      </div>
+      <div>
+        <label>Nombre</label>
+        <select id="count">
+          <option value="5">5 prochains</option>
+          <option value="8">8 prochains</option>
+          <option value="12">12 prochains</option>
+        </select>
+      </div>
+    </div>
 
-  <a href="https://infotaxi.parisaeroport.fr" target="_blank" class="airport-link">
-    🔄 Voir temps réel aéroports
-  </a>
+    <div style="margin-top:10px" class="row">
+      <button id="run" class="primary">Chercher</button>
+      <button id="demo" class="secondary">Mode démo</button>
+    </div>
+
+    <div style="margin-top:10px" class="flex">
+      <label style="margin:0"><input id="autorefresh" type="checkbox" checked> Actualiser toutes les 30s</label>
+      <div style="flex:1"></div>
+      <button id="stop" class="secondary" style="width:auto">Stop auto</button>
+    </div>
+
+    <div id="status" class="hint"></div>
+
+    <div id="results"></div>
+
+    <div class="hint" style="margin-top:8px">
+      Astuce : si tu n'as pas de clé Navitia, clique sur <b>Mode démo</b> pour voir à quoi ressemble l'afficheur. Pour la vraie data, crée une clé sur le portail Navitia/SNCF et colle-la.
+    </div>
+  </div>
 
   <script>
-    const PRISE_EN_CHARGE = 4.40;
-    const TARIF_MIN = 8.00;
+    // élément DOM
+    const elKey = document.getElementById('apiKey');
+    const elStation = document.getElementById('station');
+    const elMode = document.getElementById('mode');
+    const elRun = document.getElementById('run');
+    const elDemo = document.getElementById('demo');
+    const elResults = document.getElementById('results');
+    const elStatus = document.getElementById('status');
+    const elAuto = document.getElementById('autorefresh');
+    const elStop = document.getElementById('stop');
+    const elCount = document.getElementById('count');
 
-    // Paramètres tarifs (€/km, €/h)
-    const TARIFS = {
-      A: { km: 1.21, h: 37.46 },
-      B: { km: 1.64, h: 38.76 },
-      C: { km: 2.08, h: 38.76 }
-    };
+    // mémoriser clé et gare localement (si tu veux)
+    if(localStorage.getItem('navitia_key')) elKey.value = localStorage.getItem('navitia_key');
+    if(localStorage.getItem('navitia_station')) elStation.value = localStorage.getItem('navitia_station');
 
-    function calculer(type) {
-      const distance = parseFloat(document.getElementById('distance').value);
-      const tempsMin = parseFloat(document.getElementById('temps').value);
+    let timer = null;
 
-      if (isNaN(distance) || isNaN(tempsMin)) {
-        document.getElementById('result').innerText = "⚠️ Entrez distance et temps.";
+    // helper fetch avec header Auth
+    async function fetchJSON(url, key) {
+      const headers = key ? { 'Authorization': key } : {};
+      const res = await fetch(url, { headers });
+      if(!res.ok) throw new Error('HTTP ' + res.status + ' ' + res.statusText);
+      return res.json();
+    }
+
+    // Recherche stop_area id via /places
+    async function findStopAreaId(stationName, key){
+      const url = 'https://api.navitia.io/v1/coverage/fr-idf/places?q=' + encodeURIComponent(stationName) + '&type[]=stop_area';
+      const data = await fetchJSON(url, key);
+      if(!data.places || data.places.length===0) return null;
+      // prendre le premier stop_area pertinent
+      const item = data.places.find(p => p.stop_area) || data.places[0];
+      return item.stop_area ? { id: item.stop_area.id, label: item.stop_area.name } : null;
+    }
+
+    // format heure HH:MM
+    function fmtTime(iso){
+      if(!iso) return '—';
+      const d = new Date(iso);
+      return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    }
+
+    // afficher résultats (liste d'objets Navitia)
+    function render(list, mode, stationLabel){
+      elResults.innerHTML = '';
+      if(!list || list.length===0){
+        elResults.innerHTML = '<div class="tile"><div class="muted">Aucun résultat pour '+ (stationLabel || '') +'.</div></div>';
         return;
       }
-
-      const tarif = TARIFS[type];
-      const prixDistance = distance * tarif.km;
-      const prixTemps = (tempsMin / 60) * tarif.h;
-      let total = PRISE_EN_CHARGE + prixDistance + prixTemps;
-
-      if (total < TARIF_MIN) total = TARIF_MIN;
-
-      document.getElementById('result').innerText =
-        `Tarif ${type} → ${total.toFixed(2)} € (distance ${distance.toFixed(1)} km, temps ${tempsMin} min)`;
+      list.slice(0, parseInt(elCount.value,10)).forEach(it => {
+        const disp = it.display_informations || {};
+        const stopdt = it.stop_date_time || {};
+        // navitia: departure_date_time / base_departure_date_time (for baseline)
+        const when = (mode === 'departures') ? stopdt.departure_date_time : stopdt.arrival_date_time;
+        const base = (mode === 'departures') ? stopdt.base_departure_date_time : stopdt.base_arrival_date_time;
+        let delayMin = 0;
+        try{
+          if(base && when) delayMin = Math.round((new Date(when) - new Date(base))/60000);
+        }catch(e){ delayMin = 0; }
+        const delayTxt = delayMin>0 ? '+'+delayMin+' min' : (delayMin<0 ? delayMin+' min' : '');
+        const line = disp.label || disp.name || (it.route && it.route.name) || 'Ligne';
+        const code = disp.code ? ' ('+disp.code+')' : '';
+        const headsign = disp.headsign || it.route?.name || it.destination || '';
+        const timeText = fmtTime(when);
+        const tile = document.createElement('div');
+        tile.className = 'tile';
+        tile.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div class="line">${line}${code}</div>
+              <div class="muted small">${headsign}</div>
+            </div>
+            <div style="text-align:right">
+              <div class="time">${timeText}</div>
+              <div class="muted small">${delayTxt}</div>
+            </div>
+          </div>
+        `;
+        elResults.appendChild(tile);
+      });
     }
+
+    // fonction principale : faire la recherche et afficher
+    async function loadOnce(){
+      const key = elKey.value.trim();
+      const stationName = elStation.value.trim();
+      const mode = elMode.value;
+
+      // sauvegarder localement (optionnel)
+      if(key) localStorage.setItem('navitia_key', key);
+      if(stationName) localStorage.setItem('navitia_station', stationName);
+
+      if(!stationName){
+        elStatus.innerHTML = '<span class="err">Indique une gare (ex. "Gare de Lyon").</span>';
+        return;
+      }
+      elStatus.textContent = 'Recherche de la gare…';
+      try{
+        const stop = await findStopAreaId(stationName, key);
+        if(!stop){ elStatus.innerHTML = '<span class="err">Gare introuvable (vérifie le nom).</span>'; elResults.innerHTML=''; return; }
+        elStatus.textContent = 'Gare trouvée : ' + stop.label + ' → récupération des ' + (mode==='departures'?'départs':'arrivées') + '…';
+
+        const url = 'https://api.navitia.io/v1/coverage/fr-idf/stop_areas/' + encodeURIComponent(stop.id) + '/' + mode + '?count=' + encodeURIComponent(elCount.value);
+        const data = await fetchJSON(url, key);
+        const list = mode === 'departures' ? (data.departures || []) : (data.arrivals || []);
+        render(list, mode, stop.label);
+        elStatus.innerHTML = '<span class="ok">Mis à jour: ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) + '</span>';
+      }catch(err){
+        console.error(err);
+        elStatus.innerHTML = '<span class="err">Erreur: ' + (err.message || err) + '</span>';
+        elResults.innerHTML = '';
+      }
+    }
+
+    // Demo sample (sans API)
+    function showDemo(){
+      elStatus.innerHTML = '<span class="ok">Mode démo — données factices</span>';
+      const fake = [
+        { display_informations: { label: 'Ligne N', code:'N', headsign:'Vers Paris' }, stop_date_time: { departure_date_time: new Date(Date.now()+3*60000).toISOString(), base_departure_date_time: new Date(Date.now()+3*60000).toISOString() } },
+        { display_informations: { label: 'RER C', code:'C', headsign:'Vers Versailles' }, stop_date_time: { departure_date_time: new Date(Date.now()+8*60000).toISOString(), base_departure_date_time: new Date(Date.now()+7*60000).toISOString() } },
+        { display_informations: { label: 'Transilien N', code:'N', headsign:'Vers Rambouillet' }, stop_date_time: { departure_date_time: new Date(Date.now()+17*60000).toISOString(), base_departure_date_time: new Date(Date.now()+17*60000).toISOString() } },
+      ];
+      render(fake, elMode.value, elStation.value || 'Gare (démo)');
+    }
+
+    // auto refresh control
+    function startAuto(){
+      clearInterval(timer);
+      if(elAuto.checked){
+        timer = setInterval(loadOnce, 30000); // toutes les 30s
+      }
+    }
+
+    // évènements
+    elRun.addEventListener('click', async ()=>{
+      await loadOnce();
+      startAuto();
+    });
+    elDemo.addEventListener('click', showDemo);
+    elStop.addEventListener('click', ()=>{
+      clearInterval(timer);
+      elStatus.innerHTML = '<span class="muted">Auto-refresh stoppé.</span>';
+    });
+    elAuto.addEventListener('change', startAuto);
+
+    // si tu colles la page puis appuies sur "Chercher", ça fonctionne
   </script>
 </body>
 </html>
